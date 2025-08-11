@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Stormwatch Tracker</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0d0d0d" />
+<style>
+  :root {
+    --bg: #0d0d0d; --fg:#f2f2f2; --muted:#9aa0a6; --card:#121212; --border:#2b2b2b;
+    --cat1:#00cc44; --cat2:#cccc00; --cat3:#ff8800; --cat4:#ff3300; --cat5:#7a0000; --accent:#00d4ff; --ok:#1db954; --warn:#ff9900; --danger:#ff4d4d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  header{position:sticky;top:0;z-index:10;background:rgba(13,13,13,.9);backdrop-filter:blur(6px);border-bottom:1px solid var(--border)}
+  header .wrap{max-width:820px;margin:0 auto;padding:10px 14px;display:flex;align-items:center;gap:10px;justify-content:space-between}
+  h1{margin:0;font-size:20px;letter-spacing:.2px}
+  .gizmo{font-size:22px;filter:drop-shadow(0 0 6px rgba(255,255,0,.35));animation:flash 2s infinite}
+  @keyframes flash{0%,100%{opacity:.9}50%{opacity:.4}}
+  main{max-width:820px;margin:0 auto;padding:14px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin:12px 0}
+  .section-title{margin:0 0 10px 0;font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  button,.pill{appearance:none;border:1px solid var(--border);background:#1a1a1a;color:var(--fg);padding:10px 12px;border-radius:12px;cursor:pointer;font-size:14px}
+  button:active{transform:translateY(1px)}
+  .btn-wide{min-width:104px}
+  .active{outline:2px solid var(--accent)}
+  .cat-btn{color:#000;font-weight:700;border:none}
+  .cat1{background:var(--cat1)}.cat2{background:var(--cat2)}.cat3{background:var(--cat3)}.cat4{background:var(--cat4)}.cat5{background:var(--cat5);color:#fff}
+  textarea{width:100%;min-height:120px;background:#141414;color:var(--fg);border:1px solid var(--border);border-radius:12px;padding:10px;resize:vertical}
+  .muted{color:var(--muted);font-size:12px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .timeline{font-size:13px;line-height:1.4}
+  .timeline div{padding:6px 0;border-bottom:1px dashed var(--border)}
+  .kpi{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .kpi .count{font-size:20px;font-weight:700}
+  footer{text-align:center;color:var(--muted);padding:40px 0 20px;font-size:12px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transition:.3s;z-index:30}
+  .toast.show{opacity:1}
+  /* sparkline */
+  #spark{width:100%;height:40px;background:#0f0f0f;border:1px solid var(--border);border-radius:10px}
+  .quick-actions button{background:#141414}
+  .danger{border-color:var(--danger);color:#ffb3b3}
+  /* tiny chips */
+  .chip{padding:6px 10px;border-radius:999px;background:#141414;border:1px solid var(--border);font-size:12px}
+  /* modal */
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal{background:#111;border:1px solid var(--border);border-radius:16px;padding:18px;width:min(92vw,420px)}
+  .modal input{width:100%;font-size:16px;padding:10px;border-radius:12px;border:1px solid var(--border);background:#141414;color:#fff}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>🌪️ Stormwatch Tracker</h1>
+    <div class="gizmo" title="Gizmo">⛈️</div>
+  </div>
+</header>
+<main>
+  <div class="card kpi">
+    <div>
+      <div class="muted">Today</div>
+      <div id="todayStr" style="font-weight:600"></div>
+    </div>
+    <div>
+      <div class="muted">Next reset</div>
+      <div id="countdown" class="count">--:--</div>
+      <div class="muted" id="resetAt"></div>
+    </div>
+    <div>
+      <div class="muted">CAT</div>
+      <div id="currentCat" class="count">—</div>
+    </div>
+  </div>
+
+  <!-- Quick actions -->
+  <section class="card quick-actions">
+    <div class="section-title">Quick Actions</div>
+    <div class="row" id="quickRow">
+      <button id="qaLast1" class="chip">—</button>
+      <button id="qaLast2" class="chip">—</button>
+      <button id="qaLast3" class="chip">—</button>
+      <button id="catSpike" class="chip danger">CAT Spike ☠️</button>
+    </div>
+    <canvas id="spark"></canvas>
+  </section>
+
+  <!-- CAT LEVEL -->
+  <section class="card">
+    <div class="section-title">CAT Level</div>
+    <div class="row" id="catRow">
+      <button class="cat-btn cat1 btn-wide" data-cat="1">CAT 1</button>
+      <button class="cat-btn cat2 btn-wide" data-cat="2">CAT 2</button>
+      <button class="cat-btn cat3 btn-wide" data-cat="3">CAT 3</button>
+      <button class="cat-btn cat4 btn-wide" data-cat="4">CAT 4</button>
+      <button class="cat-btn cat5 btn-wide" data-cat="5">CAT 5 ☠️</button>
+    </div>
+    <div class="timeline" id="catTimeline"></div>
+  </section>
+
+  <!-- PRNs -->
+  <section class="card">
+    <div class="section-title">PRN Medications</div>
+    <div class="row" id="prnRow">
+      <button class="pill" data-med="Xanax 0.5 mg">Xanax 0.5 mg</button>
+      <button class="pill" data-med="Propranolol 20 mg IR">Propranolol 20 mg IR</button>
+      <button class="pill" data-med="Buspirone 15 mg">Buspirone 15 mg</button>
+      <button class="pill" id="otherBtn" type="button">Other…</button>
+    </div>
+    <div id="otherForm" class="row" style="display:none; margin-top:8px; align-items:center;">
+      <input id="otherInput" type="text" placeholder="PRN name & dose (e.g., Hydroxyzine 25 mg)" style="flex:1; min-width:0; background:#141414; color:#fff; border:1px solid var(--border); border-radius:10px; padding:10px;" />
+      <button id="otherAdd" class="pill" type="button">Add</button>
+      <button id="otherCancel" class="pill" type="button" style="background:#1a1a1a;">Cancel</button>
+    </div>
+    <div class="muted" id="prnSummary">No PRNs logged yet.</div>
+    <div class="timeline" id="prnTimeline"></div>
+    <div class="row">
+      <button id="undoBtn">Undo last</button>
+      <button id="prnCfgBtn" class="chip">Cooldowns/Settings</button>
+    </div>
+  </section>
+
+  <!-- SYMPTOMS (heat) -->
+  <section class="card">
+    <div class="section-title">Symptoms</div>
+    <div class="grid-2" id="symptomGrid"></div>
+    <div class="muted" id="symHeat"></div>
+  </section>
+
+  <!-- NOTES -->
+  <section class="card">
+    <div class="section-title">Notes</div>
+    <textarea id="notes" placeholder="Type anything you want to remember about today…"></textarea>
+    <div class="muted" id="saveHint">Saved.</div>
+  </section>
+
+  <!-- EXPORTS / HISTORY -->
+  <section class="card">
+    <div class="section-title">Exports & History</div>
+    <div class="row">
+      <button id="savePdf">Save PDF</button>
+      <button id="saveJson">Export JSON</button>
+      <button id="importJson">Import JSON</button>
+      <button id="rollupBtn">Monthly Roll‑up (PDF)</button>
+    </div>
+  </section>
+
+  <!-- CONTROLS -->
+  <section class="card">
+    <div class="row">
+      <button id="lockBtn">Lock</button>
+      <button id="wipeBtn" class="danger">Red Alarm Wipe</button>
+      <button id="settingsBtn" class="chip">Settings</button>
+    </div>
+  </section>
+
+  <footer>Made for Mork • local only • custom reset • ⛈️</footer>
+</main>
+
+<!-- PASSCODE MODAL -->
+<div id="passcodeModal" class="backdrop">
+  <div class="modal">
+    <div style="margin-bottom:10px">Enter Passcode</div>
+    <input id="passInput" type="password" inputmode="numeric" maxlength="6" />
+    <div class="row" style="margin-top:10px; justify-content:flex-end">
+      <button id="setPassBtn">Set New</button>
+      <button id="unlockBtn">Unlock</button>
+    </div>
+    <div class="muted" id="passHint"></div>
+  </div>
+</div>
+
+<!-- PRN SETTINGS MODAL -->
+<div id="prnCfgModal" class="backdrop">
+  <div class="modal">
+    <h3 style="margin:0 0 8px 0">PRN Cooldowns</h3>
+    <div class="muted">Set a gentle reminder window (hours). Logs are not blocked.</div>
+    <div class="row" style="margin-top:10px">
+      <label class="chip">Xanax: <input id="cdXanax" type="number" min="0" step="0.5" style="width:80px;margin-left:6px"></label>
+      <label class="chip">Propranolol: <input id="cdProp" type="number" min="0" step="0.5" style="width:80px;margin-left:6px"></label>
+      <label class="chip">Buspirone: <input id="cdBusp" type="number" min="0" step="0.5" style="width:80px;margin-left:6px"></label>
+    </div>
+    <div class="row" style="margin-top:10px;justify-content:flex-end">
+      <button id="prnCfgSave">Save</button>
+      <button id="prnCfgClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div id="settingsModal" class="backdrop">
+  <div class="modal">
+    <h3 style="margin:0 0 8px 0">Settings</h3>
+    <div class="row">
+      <label class="chip">Reset time (HH:MM 24h): <input id="resetTime" type="time" value="12:00"></label>
+      <label class="chip">12/24h display: <select id="hFmt"><option value="12">12h</option><option value="24">24h</option></select></label>
+      <label class="chip">Font size: <select id="fontSz"><option>Normal</option><option>Large</option><option>X-Large</option></select></label>
+    </div>
+    <div class="row" style="justify-content:flex-end">
+      <button id="settingsSave">Save</button>
+      <button id="settingsClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast">Saved</div>
+
+<script src="jspdf.umd.min.js"></script>
+<script>
+  const { jsPDF } = window.jspdf;
+
+  // --------- Config & Defaults ---------
+  const storeKey = 'stormwatch.v3';
+  const cfgKey = 'stormwatch.cfg';
+  const passKey = 'stormwatch.passcode';
+  const DEFAULT_CFG = { reset:'12:00', hourFmt:'12', font:'Normal', prnCooldowns:{ 'Xanax 0.5 mg':0, 'Propranolol 20 mg IR':0, 'Buspirone 15 mg':0 } };
+
+  const SYMPTOMS = ['Chest tightness','Nausea','Tachycardia','Derealization','Crying','Dissociation','Herman present','Sweating/night sweats','Jaw clench','Head pressure','Tinnitus','Leg bounce','Other'];
+  const PRNS = ['Xanax 0.5 mg','Propranolol 20 mg IR','Buspirone 15 mg'];
+
+  const initData = () => ({ catCurrent:null, catTimeline:[], prns:[], symptoms:{}, notes:'', history:[] });
+  let data = JSON.parse(localStorage.getItem(storeKey)||'null') || initData();
+  let CFG = JSON.parse(localStorage.getItem(cfgKey)||'null') || DEFAULT_CFG;
+  const undoStack = [];
+
+  const el = id=>document.getElementById(id);
+  const fmtTime = (ms)=>{
+    const d = new Date(ms);
+    const opt = CFG.hourFmt==='24'? {hour:'2-digit',minute:'2-digit',hour12:false} : {hour:'2-digit',minute:'2-digit'};
+    return d.toLocaleTimeString([], opt);
+  };
+  const fmtDate = (ms)=> new Date(ms).toLocaleDateString();
+  const toast = (s='Saved')=>{ const t=el('toast'); t.textContent=s; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),900); };
+  const save = ()=> localStorage.setItem(storeKey, JSON.stringify(data));
+  const saveCfg = ()=> localStorage.setItem(cfgKey, JSON.stringify(CFG));
+
+  // --------- Reset scheduling & countdown ---------
+  function getNextResetTime(){
+    const [hh,mm] = CFG.reset.split(':').map(Number);
+    const now = new Date();
+    const target = new Date(); target.setHours(hh,mm,0,0);
+    if(now>target) target.setDate(target.getDate()+1);
+    return target;
+  }
+  function startCountdown(){
+    function tick(){
+      const target = getNextResetTime();
+      const ms = target - new Date();
+      const h = String(Math.floor(ms/3600000)).padStart(2,'0');
+      const m = String(Math.floor((ms%3600000)/60000)).padStart(2,'0');
+      el('countdown').textContent = `${h}:${m}`;
+      el('resetAt').textContent = `at ${CFG.reset}`;
+    }
+    tick(); setInterval(tick, 60000);
+  }
+  function autoExportAndReset(){
+    const delay = getNextResetTime() - new Date();
+    setTimeout(async()=>{ await exportPdf(); wipe(false); autoExportAndReset(); }, delay);
+  }
+
+  // --------- CAT ---------
+  const catRow = el('catRow');
+  function setCat(cat){
+    [...catRow.querySelectorAll('button')].forEach(b=>b.classList.toggle('active', Number(b.dataset.cat)===Number(cat)));
+    data.catCurrent = cat; data.catTimeline.push({t:Date.now(),cat}); save(); renderCatTimeline(); el('currentCat').textContent = cat?`CAT ${cat}`:'—';
+    pushQuick(`CAT ${cat}`);
+  }
+  catRow.addEventListener('click', e=>{ const b=e.target.closest('button[data-cat]'); if(!b) return; setCat(Number(b.dataset.cat)); undoStack.push({type:'cat'}); });
+  function renderCatTimeline(){
+    const t = el('catTimeline');
+    t.innerHTML = data.catTimeline.length? data.catTimeline.map(i=>`<div>${fmtTime(i.t)} → CAT ${i.cat}</div>`).join('') : '<div class="muted">No CAT changes yet.</div>';
+    drawSpark();
+  }
+
+  // CAT Spike quick action
+  el('catSpike').addEventListener('click', ()=>{ setCat(5); toast('CAT 5 logged'); });
+
+  // --------- Sparkline (24h CAT) ---------
+  function drawSpark(){
+    const cv = el('spark'); const ctx = cv.getContext('2d');
+    const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
+    ctx.fillStyle = '#101010'; ctx.fillRect(0,0,w,h);
+    const tl = data.catTimeline.slice(-50); // recent
+    if(!tl.length){ ctx.fillStyle='#333'; ctx.fillRect(0,h-6,w,2); return; }
+    const times = tl.map(p=>p.t);
+    const minT = times[0], maxT = times[times.length-1];
+    const x = t=> (t-minT)/Math.max(1,(maxT-minT))*w;
+    const y = c=> h - (c* (h/6)); // 1..5 levels
+    ctx.strokeStyle = '#0af'; ctx.lineWidth=2; ctx.beginPath();
+    tl.forEach((p,i)=>{ const X=x(p.t), Y=y(p.cat); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+    ctx.stroke();
+  }
+
+  // --------- PRNs with cooldowns, counts, undo ---------
+  const prnRow = el('prnRow');
+  const prnTimeline = el('prnTimeline');
+  const otherBtn = el('otherBtn');
+  const otherForm = el('otherForm');
+  const otherInput = el('otherInput');
+  el('otherAdd').addEventListener('click', addOtherPRN);
+  el('otherCancel').addEventListener('click', ()=>{ otherForm.style.display='none'; otherInput.value=''; });
+  otherInput.addEventListener('keydown', e=>{ if(e.key==='Enter') addOtherPRN(); });
+
+  prnRow.addEventListener('click', e=>{
+    const btn = e.target.closest('button.pill'); if(!btn) return;
+    if(btn.id==='otherBtn'){ otherForm.style.display='flex'; otherInput.value=''; otherInput.focus(); return; }
+    logPRN(btn.dataset.med);
+  });
+  function addOtherPRN(){ const med=otherInput.value.trim(); if(!med){ toast('Enter a PRN name'); return;} logPRN(med); otherInput.value=''; otherForm.style.display='none'; }
+
+  function lastTaken(med){ const list = data.prns.filter(p=>p.med===med); return list.length? list[list.length-1].t : null; }
+  function logPRN(med){
+    const now = Date.now();
+    const last = lastTaken(med);
+    const cdHours = (CFG.prnCooldowns[med]||0);
+    if(last && cdHours>0){
+      const elapsedH = (now-last)/3600000;
+      if(elapsedH < cdHours){ toast(`${med}: inside ${cdHours}h window (last ${fmtTime(last)})`); }
+    }
+    data.prns.push({ t: now, med }); save(); renderPrns(); toast('PRN logged'); pushQuick(med); undoStack.push({type:'prn'});
+  }
+  el('undoBtn').addEventListener('click', ()=>{ const last = data.prns.pop(); if(!last) return; save(); renderPrns(); toast('Undid last'); });
+  function renderPrns(){
+    if(!data.prns.length){ prnTimeline.innerHTML='<div class="muted">None yet.</div>'; el('prnSummary').textContent='No PRNs logged yet.'; return; }
+    prnTimeline.innerHTML = data.prns.map(p=>`<div>${fmtTime(p.t)} — ${p.med}</div>`).join('');
+    const counts = data.prns.reduce((a,p)=>{ a[p.med]=(a[p.med]||0)+1; return a; },{});
+    const lastMap = Object.fromEntries(Object.keys(counts).map(m=>[m,lastTaken(m)]));
+    el('prnSummary').textContent = Object.entries(counts).map(([m,c])=>{
+      const last = lastMap[m]? ` • last ${fmtTime(lastMap[m])}`:''; return `${m} ×${c}${last}`;
+    }).join(' • ');
+    // button visuals
+    [...prnRow.querySelectorAll('button.pill')].forEach(b=>{
+      const has = data.prns.some(p=>p.med===b.dataset.med);
+      b.classList.toggle('active', has);
+    });
+  }
+
+  // PRN cooldown settings modal
+  const prnCfgModal = el('prnCfgModal');
+  el('prnCfgBtn').addEventListener('click', ()=>{ prnCfgModal.style.display='flex'; el('cdXanax').value = CFG.prnCooldowns['Xanax 0.5 mg']||0; el('cdProp').value = CFG.prnCooldowns['Propranolol 20 mg IR']||0; el('cdBusp').value = CFG.prnCooldowns['Buspirone 15 mg']||0; });
+  el('prnCfgSave').addEventListener('click', ()=>{ CFG.prnCooldowns['Xanax 0.5 mg']=Number(el('cdXanax').value)||0; CFG.prnCooldowns['Propranolol 20 mg IR']=Number(el('cdProp').value)||0; CFG.prnCooldowns['Buspirone 15 mg']=Number(el('cdBusp').value)||0; saveCfg(); prnCfgModal.style.display='none'; toast('Cooldowns saved'); });
+  el('prnCfgClose').addEventListener('click', ()=> prnCfgModal.style.display='none');
+
+  // --------- Symptoms + heat (last 7 days memory via data.history) ---------
+  const grid = el('symptomGrid');
+  SYMPTOMS.forEach(s=>{
+    const id = 'sym_'+s.replace(/[^a-z0-9]/gi,'').toLowerCase();
+    const lbl = document.createElement('label'); lbl.className='pill'; lbl.style.display='flex'; lbl.style.alignItems='center'; lbl.style.gap='8px';
+    lbl.innerHTML = `<input type="checkbox" id="${id}"> <span>${s}</span>`;
+    grid.appendChild(lbl);
+    const box = lbl.querySelector('input');
+    box.addEventListener('change',()=>{ data.symptoms[s]=box.checked; save(); renderSymHeat(); });
+  });
+  function renderSymHeat(){
+    const counts = {}; (data.history||[]).slice(-7).forEach(day=>{ (day.syms||[]).forEach(s=>{ counts[s]=(counts[s]||0)+1; }); });
+    const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>`${k}×${v}`);
+    el('symHeat').textContent = top.length? `7‑day heat: ${top.join(' • ')}` : '';
+  }
+
+  // --------- Notes ---------
+  const notesEl = el('notes');
+  notesEl.addEventListener('input', ()=>{ data.notes = notesEl.value; save(); el('saveHint').textContent='Saved.'; });
+
+  // --------- Quick actions memory ---------
+  function pushQuick(label){
+    const els=[el('qaLast1'),el('qaLast2'),el('qaLast3')];
+    const cur=[...els].map(b=>b.dataset.label).filter(Boolean);
+    cur.unshift(label); const next = Array.from(new Set(cur)).slice(0,3);
+    next.forEach((lab,i)=>{ els[i].textContent=lab; els[i].dataset.label=lab; els[i].onclick=()=>{ if(lab.startsWith('CAT')){ const c=Number(lab.replace(/[^0-9]/g,'')); setCat(c);} else { logPRN(lab);} }; });
+  }
+
+  // --------- Exports ---------
+  async function exportPdf(range){
+    const doc = new jsPDF({ unit:'pt', format:'a4' });
+    const pad=36; let y=pad; const line=(t)=>{ doc.text(t,pad,y); y+=18; };
+    doc.setFillColor(13,13,13); doc.rect(0,0,595,842,'F'); doc.setTextColor(255,255,255);
+    doc.setFont('helvetica','bold'); doc.setFontSize(18); line('Stormwatch Tracker');
+    doc.setFont('helvetica','normal'); doc.setFontSize(12);
+    line(`Date: ${fmtDate(Date.now())}`);
+    line(`Current CAT: ${data.catCurrent?('CAT '+data.catCurrent):'—'}`);
+    y+=6; doc.line(pad,y,595-pad,y); y+=18;
+    doc.setFont('helvetica','bold'); line('CAT Timeline'); doc.setFont('helvetica','normal');
+    (data.catTimeline||[]).forEach(i=> line(`${fmtTime(i.t)} → CAT ${i.cat}`)); if(!data.catTimeline.length) line('—');
+    y+=6; doc.line(pad,y,595-pad,y); y+=18;
+    doc.setFont('helvetica','bold'); line('PRNs'); doc.setFont('helvetica','normal');
+    (data.prns||[]).forEach(p=> line(`${fmtTime(p.t)} — ${p.med}`)); if(!data.prns.length) line('—');
+    y+=6; doc.line(pad,y,595-pad,y); y+=18;
+    doc.setFont('helvetica','bold'); line('Symptoms'); doc.setFont('helvetica','normal');
+    const on = Object.entries(data.symptoms).filter(([k,v])=>v).map(([k])=>k); line(on.length? on.join(', ') : '—');
+    y+=6; doc.line(pad,y,595-pad,y); y+=18;
+    doc.setFont('helvetica','bold'); line('Notes'); doc.setFont('helvetica','normal');
+    (data.notes||'—').split(/\n/).forEach(n=> line(n));
+    const name = `Stormwatch-${new Date().toISOString().slice(0,10)}.pdf`;
+    doc.save(name);
+  }
+  el('savePdf').addEventListener('click', exportPdf);
+
+  // JSON export/import
+  el('saveJson').addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`Stormwatch-${new Date().toISOString().slice(0,10)}.json`; a.click();
+  });
+  el('importJson').addEventListener('click', ()=>{
+    const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json';
+    inp.onchange = ()=>{ const f=inp.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ data = JSON.parse(r.result); save(); restoreAll(); toast('Imported'); }catch(e){ toast('Bad file'); } }; r.readAsText(f); };
+    inp.click();
+  });
+
+  // Monthly roll-up (very simple)
+  el('rollupBtn').addEventListener('click', ()=>{ exportPdf('month'); }); // placeholder reuse
+
+  // --------- Lock with passcode + lockout ---------
+  const passModal = el('passcodeModal'); const passInput = el('passInput'); const passHint = el('passHint');
+  let badTries = 0; let lockedUntil = 0;
+  function showPass(){ passModal.style.display='flex'; passInput.value=''; passInput.focus(); passHint.textContent=''; }
+  el('lockBtn').addEventListener('click', showPass);
+  el('unlockBtn').addEventListener('click', ()=>{
+    const set = localStorage.getItem(passKey);
+    if(!set){ localStorage.setItem(passKey, passInput.value); passModal.style.display='none'; toast('Passcode set'); return; }
+    const now = Date.now(); if(now < lockedUntil){ passHint.textContent = `Locked. Try again later.`; return; }
+    if(passInput.value===set){ badTries=0; passModal.style.display='none'; toast('Unlocked'); }
+    else { badTries++; if(badTries>=5){ lockedUntil = Date.now()+ 10*60*1000; passHint.textContent='Too many attempts. Locked 10 min.'; } else { passHint.textContent=`Wrong code (${badTries}/5)`; } }
+  });
+  el('setPassBtn').addEventListener('click', ()=>{ localStorage.setItem(passKey, passInput.value); toast('Passcode updated'); });
+
+  // --------- Settings ---------
+  const settingsModal = el('settingsModal');
+  el('settingsBtn').addEventListener('click', ()=>{ settingsModal.style.display='flex'; el('resetTime').value = CFG.reset; el('hFmt').value = CFG.hourFmt; el('fontSz').value = CFG.font; });
+  el('settingsSave').addEventListener('click', ()=>{ CFG.reset = el('resetTime').value || '12:00'; CFG.hourFmt=el('hFmt').value; CFG.font=el('fontSz').value; document.body.style.fontSize = CFG.font==='Large'?'18px':CFG.font==='X-Large'?'20px':'16px'; saveCfg(); settingsModal.style.display='none'; startCountdown(); toast('Settings saved'); });
+  el('settingsClose').addEventListener('click', ()=> settingsModal.style.display='none');
+
+  // --------- Wipe ---------
+  function archiveToday(){
+    // push a summary day into history for heatmap
+    const syms = Object.entries(data.symptoms).filter(([k,v])=>v).map(([k])=>k);
+    data.history = data.history || [];
+    data.history.push({ d: new Date().toISOString().slice(0,10), cat:data.catCurrent, prn:data.prns, syms });
+    if(data.history.length>90) data.history = data.history.slice(-90);
+  }
+  function wipe(showToast=true){ archiveToday(); const keepHistory = data.history; data = initData(); data.history = keepHistory; save(); restoreAll(); if(showToast) toast('Cleared'); }
+  el('wipeBtn').addEventListener('click', ()=>{ if(confirm("Wipe today's data?")) wipe(); });
+
+  // --------- Restore UI ---------
+  function restoreAll(){
+    el('todayStr').textContent = new Date().toLocaleDateString(undefined,{ weekday:'short', month:'short', day:'numeric' });
+    el('currentCat').textContent = data.catCurrent?`CAT ${data.catCurrent}`:'—';
+    [...catRow.querySelectorAll('button')].forEach(b=> b.classList.toggle('active', Number(b.dataset.cat)===Number(data.catCurrent)));
+    renderCatTimeline(); renderPrns();
+    // symptoms
+    SYMPTOMS.forEach(s=>{ const id='sym_'+s.replace(/[^a-z0-9]/gi,'').toLowerCase(); const box=el(id); if(box) box.checked = !!data.symptoms[s]; });
+    renderSymHeat();
+    // notes
+    el('notes').value = data.notes||'';
+    drawSpark();
+  }
+
+  // --------- Boot ---------
+  document.body.style.fontSize = CFG.font==='Large'?'18px':CFG.font==='X-Large'?'20px':'16px';
+  el('todayStr').textContent = new Date().toLocaleDateString(undefined,{ weekday:'short', month:'short', day:'numeric' });
+  startCountdown(); autoExportAndReset(); restoreAll();
+
+  // --------- URL quick hook (?quick=...) ---------
+  const params = new URLSearchParams(location.search);
+  const q = params.get('quick'); if(q){ if(q.toLowerCase().startsWith('cat')){ const c=q.replace(/[^0-9]/g,''); if(c) setCat(Number(c)); } else { logPRN(q); } }
+
+  // --------- Service worker (optional, requires https hosting) ---------
+  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+</script>
+</body>
+</html>
